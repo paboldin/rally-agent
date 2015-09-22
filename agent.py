@@ -1,8 +1,8 @@
 #!/usr/bin/python
 
-import time
 import sys
 import zmq
+import datetime
 import subprocess
 import uuid
 import tempfile
@@ -27,7 +27,7 @@ while True:
         }
         action = d.get("action")
         if action == "ping":
-            pass
+            r["time"] = datetime.datetime.utcnow().isoformat()
         elif action == "command":
             stdout_fh = subprocess.PIPE
             stderr_fh = subprocess.PIPE
