@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import argparse
 import cgi
 import collections
 import datetime
@@ -16,14 +17,6 @@ try:
 except:
     import queue
 
-publish_context = zmq.Context()
-publish_socket = publish_context.socket(zmq.PUB)
-publish_socket.bind("tcp://*:1234")
-
-pull_context = zmq.Context()
-pull_socket = pull_context.socket(zmq.PULL)
-pull_socket.bind("tcp://*:1235")
-
 
 INF = float("+inf")
 
@@ -31,11 +24,14 @@ class AgentsRequest(object):
     missed_queue = collections.defaultdict(list)
     last_req_id = None
 
-    def __init__(self, req, config, req_id=None):
+    def __init__(self, req, config, publish_socket, pull_socket, req_id=None):
         self.req_id = req_id or str(uuid.uuid4())
         AgentsRequest.last_req_id = self.req_id
+
         self.req = req
         self.config = config
+        self.publish_socket = publish_socket
+        self.pull_socket = pull_socket
 
     def __call__(self):
         req = {
@@ -43,12 +39,13 @@ class AgentsRequest(object):
         }
         req.update(self.req)
 
-        publish_socket.send_json(req)
+        self.publish_socket.send_json(req)
 
-        return self.recv_responses(self.req_id, **self.config)
+        return self.recv_responses(
+            self.req_id, self.pull_socket, **self.config)
 
     @classmethod
-    def recv_responses(cls, req_id, timeout=1000, agents=INF):
+    def recv_responses(cls, req_id, pull_socket, timeout=1000, agents=INF):
         tstart = datetime.datetime.now()
         timeout = float(timeout)
         agents = float(agents)
@@ -88,6 +85,7 @@ class RegisterHandlerMeta(type):
 
         return type.__new__(cls, clsname, base, namespace)
 
+
 def register(path, methods=('GET',)):
     def decorator(f):
         f._path = path
@@ -98,6 +96,11 @@ def register(path, methods=('GET',)):
 @six.add_metaclass(RegisterHandlerMeta)
 class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
     config = dict(timeout=1000, agents=INF)
+
+    def __init__(self, request, client_address, server):
+        self.pull_socket = server.pull_socket
+        self.publish_socket = server.publish_socket
+        super(RequestHandler, self).__init__(request, client_address, server)
 
     def send_json_response(self, data, status=200):
         self.send_response(status)
@@ -125,7 +128,8 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
 
     @register("/missed", ('GET', 'DELETE'))
     def missed(self):
-        AgentsRequest.recv_responses(None, timeout=10000, agents=INF)
+        AgentsRequest.recv_responses(None, self.pull_socket,
+                                     timeout=10000, agents=INF)
 
         self.send_json_response({"missed": AgentsRequest.missed_queue})
         if self.command == "DELETE":
@@ -148,7 +152,8 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         )
 
         responses = AgentsRequest.recv_responses(
-            config.pop("req", AgentsRequest.last_req_id), **config)
+            config.pop("req", AgentsRequest.last_req_id),
+            self.pull_socket, **config)
         self.send_json_response(responses)
 
     def route(self):
@@ -184,7 +189,11 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         if req is None:
             return
 
-        request = AgentsRequest(req, config)
+        request = AgentsRequest(
+            req,
+            config,
+            self.publish_socket,
+            self.pull_socket)
         response = request()
         self.send_json_response(response)
 
@@ -207,9 +216,51 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
                 dict(six.moves.urllib.parse.parse_qsl(self.url.query)))
 
 
+class MasterAgentHTTPServer(six.moves.BaseHTTPServer.HTTPServer):
+    def __init__(self, address, request, publish_socket, pull_socket):
+        six.moves.BaseHTTPServer.HTTPServer.__init__(self, address, request)
+        self.publish_socket = publish_socket
+        self.pull_socket = pull_socket
+
+
+def init_zmq(publish_url, pull_url):
+    publish_context = zmq.Context()
+    publish_socket = publish_context.socket(zmq.PUB)
+    publish_socket.bind(publish_url)
+
+    pull_context = zmq.Context()
+    pull_socket = pull_context.socket(zmq.PULL)
+    pull_socket.bind(pull_url)
+
+    return publish_socket, pull_socket
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run a HTTP<->ZMQ proxy called 'masteragent'")
+    parser.add_argument(
+        "--http-host", help="Host to bind HTTP face to",
+        default="0.0.0.0")
+    parser.add_argument(
+        "--http-port", help="Port to bind HTTP face to",
+        default=8080)
+
+    parser.add_argument(
+        "--publish-url", help="ZMQ Publish bind URL",
+        default="tcp://*:1234")
+    parser.add_argument(
+        "--pull-url", help="ZMQ Pull bind URL",
+        default="tcp://*:1235")
+
+    return parser.parse_args()
+
 def main():
-    server = six.moves.BaseHTTPServer.HTTPServer(
-        ('localhost', 8080), RequestHandler)
+    args = parse_args()
+    publish_socket, pull_socket = init_zmq(
+        args.publish_url, args.pull_url)
+
+    server = MasterAgentHTTPServer(
+        (args.http_host, args.http_port), RequestHandler,
+        publish_socket, pull_socket)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
