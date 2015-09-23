@@ -3,6 +3,7 @@
 import cgi
 import collections
 import datetime
+import functools
 import json
 import six
 import threading
@@ -28,9 +29,11 @@ INF = float("+inf")
 
 class AgentsRequest(object):
     missed_queue = collections.defaultdict(list)
+    last_req_id = None
 
     def __init__(self, req, config, req_id=None):
         self.req_id = req_id or str(uuid.uuid4())
+        AgentsRequest.last_req_id = self.req_id
         self.req = req
         self.config = config
 
@@ -73,8 +76,27 @@ def make_flat(form):
             d[k] = form[k].value
     return d
 
+class RegisterHandlerMeta(type):
+    def __new__(cls, clsname, base, namespace):
+        methods = namespace["methods"] = collections.defaultdict(dict)
+        for func in namespace.values():
+            if not callable(func):
+                continue
 
-class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler):
+            for item_method in getattr(func, "_methods", []):
+                methods[item_method][getattr(func, "_path")] = func
+
+        return type.__new__(cls, clsname, base, namespace)
+
+def register(path, methods=('GET',)):
+    def decorator(f):
+        f._path = path
+        f._methods = methods
+        return f
+    return decorator
+
+@six.add_metaclass(RegisterHandlerMeta)
+class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
     config = dict(timeout=1000, agents=INF)
 
     def send_json_response(self, data, status=200):
@@ -84,7 +106,8 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler):
 
         self.wfile.write(json.dumps(data) + "\n")
 
-    def configure(self, query):
+    @register("/configure", ('GET', 'PUT'))
+    def configure(self, query=None):
         if query:
             config = dict(six.moves.urllib.parse.parse_qsl(query))
             self.config["timeout"] = float(
@@ -100,21 +123,16 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler):
         config.update(self._get_request_from_url()[1])
         return config
 
+    @register("/missed", ('GET', 'DELETE'))
     def missed(self):
         AgentsRequest.recv_responses(None, timeout=10000, agents=INF)
 
         self.send_json_response({"missed": AgentsRequest.missed_queue})
         if self.command == "DELETE":
             AgentsRequest.missed_queue.clear()
+    missed._methods = "ABC"
 
-    def do_PUT(self):
-
-        url = six.moves.urllib.parse.urlparse(self.path)
-        if url.path == "/configure":
-            return self.configure(url.query)
-
-        self.send_response(404)
-
+    @register("/ping")
     def ping(self):
         config = self._get_config_from_url(
             timeout=10000,
@@ -122,35 +140,28 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler):
         )
         return self.send_request_to_agents(config)
 
+    @register("/poll")
     def poll(self):
         config = self._get_config_from_url(
             timeout=10000,
             agents=INF
         )
 
-        responses = AgentsRequest.recv_responses(config.pop("req"), **config)
+        responses = AgentsRequest.recv_responses(
+            config.pop("req", AgentsRequest.last_req_id), **config)
         self.send_json_response(responses)
 
-    def do_GET(self):
-        if self.path == "/missed":
-            return self.missed()
+    def route(self):
+        self.url = six.moves.urllib.parse.urlparse(self.path)
+        path = self.url.path
+        try:
+            handler = self.methods[self.command][path]
+        except KeyError:
+            return self.send_response(404)
 
-        if self.path == "/configure":
-            return self.configure(None)
+        return handler(self)
 
-        if self.path.startswith("/ping"):
-            return self.ping()
-
-        if self.path.startswith("/poll"):
-            return self.poll()
-
-        self.send_response(404)
-
-    def do_DELETE(self):
-        if self.path == "/missed":
-            return self.missed()
-        
-        self.send_response(404)
+    do_PUT = do_GET = do_DELETE = route
 
     def do_POST(self):
         self.send_request_to_agents(self.config)
@@ -192,8 +203,8 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler):
         return make_flat(form)
 
     def _get_request_from_url(self):
-        url = six.moves.urllib.parse.urlparse(self.path)
-        return url.path, dict(six.moves.urllib.parse.parse_qsl(url.query))
+        return (self.url.path,
+                dict(six.moves.urllib.parse.parse_qsl(self.url.query)))
 
 
 def main():
