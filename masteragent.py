@@ -107,7 +107,7 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         self.send_header("Content-Type", "text/json")
         self.end_headers()
 
-        self.wfile.write(json.dumps(data) + "\n")
+        self.wfile.write(bytes(json.dumps(data) + "\n", "utf-8"))
 
     @register("/configure", ('GET', 'PUT'))
     def configure(self, query=None):
