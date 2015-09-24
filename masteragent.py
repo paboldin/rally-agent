@@ -50,7 +50,7 @@ class AgentsRequest(object):
         timeout = float(timeout)
         agents = float(agents)
         queue = cls.missed_queue.pop(req_id, [])
-        while timeout>0 and pull_socket.poll(timeout) and len(queue) < agents:
+        while timeout>0 and len(queue) < agents and pull_socket.poll(timeout):
             resp = pull_socket.recv_json()
             if resp["req"] != req_id:
                 cls.missed_queue[resp["req"]].append(resp)
