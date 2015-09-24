@@ -93,20 +93,24 @@ class Agent(object):
             agent_id = str(uuid.uuid4())
         self.agent_id = agent_id
         self.executor = None
-        self.init_zmq(subscribe_url, push_url)
 
-    def init_zmq(self, subscribe_url, push_url):
+        self.subscribe_socket = self.init_subscribe_zmq(subscribe_url)
+        self.push_socket = self.init_push_zmq(push_url)
+
+    def init_subscribe_zmq(self, subscribe_url):
         subscribe_context = zmq.Context()
         subscribe_socket = subscribe_context.socket(zmq.SUB)
         subscribe_socket.connect(subscribe_url)
         subscribe_socket.setsockopt_string(zmq.SUBSCRIBE, u"")
 
+        return subscribe_socket
+
+    def init_push_zmq(self, push_url):
         push_context = zmq.Context()
         push_socket = push_context.socket(zmq.PUSH)
         push_socket.connect(push_url)
 
-        self.subscribe_socket = subscribe_socket
-        self.push_socket = push_socket
+        return push_socket
 
     def recv_request(self):
         request = self.subscribe_socket.recv_json()
