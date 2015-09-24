@@ -50,17 +50,13 @@ class AgentsRequest(object):
         timeout = float(timeout)
         agents = float(agents)
         queue = cls.missed_queue.pop(req_id, [])
-        while timeout and pull_socket.poll(timeout) and len(queue) < agents:
+        while timeout>0 and pull_socket.poll(timeout) and len(queue) < agents:
             resp = pull_socket.recv_json()
             if resp["req"] != req_id:
                 cls.missed_queue[resp["req"]].append(resp)
             else:
                 queue.append(resp)
-            timeout = max(
-                timeout -
-                (datetime.datetime.now() - tstart).total_seconds() * 1000,
-                0
-            )
+            timeout -= (datetime.datetime.now() - tstart).total_seconds()*1000
         return queue
 
 
@@ -110,9 +106,9 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         self.wfile.write(bytes(json.dumps(data) + "\n", "utf-8"))
 
     @register("/configure", ('GET', 'PUT'))
-    def configure(self, query=None):
-        if query:
-            config = dict(six.moves.urllib.parse.parse_qsl(query))
+    def configure(self):
+        if self.url.query:
+            config = dict(six.moves.urllib.parse.parse_qsl(self.url.query))
             self.config["timeout"] = float(
                 config.get("timeout", self.config["timeout"])
             )
@@ -134,7 +130,6 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         self.send_json_response({"missed": AgentsRequest.missed_queue})
         if self.command == "DELETE":
             AgentsRequest.missed_queue.clear()
-    missed._methods = "ABC"
 
     @register("/ping")
     def ping(self):
@@ -169,6 +164,7 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
     do_PUT = do_GET = do_DELETE = route
 
     def do_POST(self):
+        self.url = six.moves.urllib.parse.urlparse(self.path)
         self.send_request_to_agents(self.config)
 
     def _parse_request(self):
