@@ -26,7 +26,7 @@ class CommandExecutor(object):
         if stdout == "null":
             stdout_fh = open("/dev/null", "wb")
         elif stdout == "tmpfile" or self.thread:
-            stdout_fh = tempfile.NamedTemporaryFile(delete=False)
+            stdout_fh = tempfile.NamedTemporaryFile()
         else:
             stdout_fh = subprocess.PIPE
 
@@ -36,7 +36,7 @@ class CommandExecutor(object):
         elif stderr == "stdout":
             stderr_fh = subprocess.STDOUT
         elif stderr == "tmpfile" or self.thread:
-            stderr_fh = tempfile.NamedTemporaryFile(delete=False)
+            stderr_fh = tempfile.NamedTemporaryFile()
         else:
             stderr_fh = subprocess.PIPE
 
@@ -121,6 +121,8 @@ class Agent(object):
 
     def loop(self):
         req = self.recv_request()
+        if req is None:
+            return
         action = req.get("action")
         resp = {
             "req": req["req"],
@@ -143,9 +145,7 @@ class Agent(object):
                 self.executor.stderr_fh):
             raise ValueError("No executor or pipes.")
 
-        size = req.get("size")
-        if size:
-            size = int(size)
+        size = int(req.get("size", -1))
         if self.executor.stdout_fh:
             resp["stdout"] = self.executor.stdout_fh.read(size).decode("utf-8")
         if self.executor.stderr_fh:
