@@ -148,16 +148,8 @@ class Agent(object):
             size = int(size)
         if self.executor.stdout_fh:
             resp["stdout"] = self.executor.stdout_fh.read(size).decode("utf-8")
-            resp["stdout_remain"] = (
-                self.executor.child_stdout_fh.tell() -
-                self.executor.stdout_fh.tell()
-            )
         if self.executor.stderr_fh:
             resp["stderr"] = self.executor.stderr_fh.read(size).decode("utf-8")
-            resp["stderr_remain"] = (
-                self.executor.child_stderr_fh.tell() -
-                self.executor.stderr_fh.tell()
-            )
 
     def do_check(self, req, resp):
         if not self.executor or not self.executor.thread:
