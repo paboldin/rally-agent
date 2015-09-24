@@ -21,24 +21,25 @@ class CommandExecutor(object):
     def _thread_target(self, process):
         self.exit_code = process.wait()
 
-    def _get_stdout_stderr(self):
-        stdout = self.req.get("stdout", "").lower()
-        if stdout == "null":
-            stdout_fh = open("/dev/null", "wb")
-        elif stdout == "tmpfile" or self.thread:
-            stdout_fh = tempfile.NamedTemporaryFile()
+    @classmethod
+    def _get_redirection(cls, config, thread=False, is_stderr=False):
+        if config == "null":
+            return open("/dev/null", "wb")
+        elif config == "stdout" and is_stderr:
+            return subprocess.STDOUT
+        elif config == "tmpfile" or thread:
+            return tempfile.NamedTemporaryFile()
         else:
-            stdout_fh = subprocess.PIPE
+            return subprocess.PIPE
 
-        stderr = self.req.get("stderr", "").lower()
-        if stderr == "null":
-            stderr_fh = open("/dev/null", "wb")
-        elif stderr == "stdout":
-            stderr_fh = subprocess.STDOUT
-        elif stderr == "tmpfile" or self.thread:
-            stderr_fh = tempfile.NamedTemporaryFile()
-        else:
-            stderr_fh = subprocess.PIPE
+    def _get_stdout_stderr(self):
+        stdout_fh = self._get_redirection(
+            self.req.get("stdout", "").lower(),
+            thread=self.thread)
+
+        stderr_fh = self._get_redirection(
+            self.req.get("stderr", "").lower(),
+            thread=self.thread, is_stderr=True)
 
         return stdout_fh, stderr_fh
 
