@@ -122,7 +122,7 @@ class Agent(object):
 
     def do_default(sef, req, resp):
         raise ValueError(
-            "Action '%s' unknown" % req.get("action", "unspecified"))
+            "Action '%s' unknown." % req.get("action", "unspecified"))
 
     def loop(self):
         req = self.recv_request()
