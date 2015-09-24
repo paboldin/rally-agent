@@ -128,12 +128,12 @@ class Agent(object):
         req = self.recv_request()
         if req is None:
             return
-        action = req.get("action")
         resp = {
             "req": req["req"],
             "agent": self.agent_id
         }
-        handler = getattr(self, "do_%s" % action, self.do_default)
+        handler = getattr(self, "do_%s" % req.get("action", "default"),
+                          self.do_default)
         try:
             new_resp = handler(req, resp)
             if new_resp: resp = new_resp
