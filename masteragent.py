@@ -24,25 +24,23 @@ class AgentsRequest(object):
     missed_queue = collections.defaultdict(list)
     last_req_id = None
 
-    def __init__(self, req, config, publish_socket, pull_socket, req_id=None):
+    def __init__(self, req, config, req_id=None):
         self.req_id = req_id or str(uuid.uuid4())
         AgentsRequest.last_req_id = self.req_id
 
         self.req = req
         self.config = config
-        self.publish_socket = publish_socket
-        self.pull_socket = pull_socket
 
-    def __call__(self):
+    def __call__(self, publish_socket, pull_socket):
         req = {
             "req": self.req_id
         }
         req.update(self.req)
 
-        self.publish_socket.send_json(req)
+        publish_socket.send_json(req)
 
         return self.recv_responses(
-            self.req_id, self.pull_socket, **self.config)
+            self.req_id, pull_socket, **self.config)
 
     @classmethod
     def recv_responses(cls, req_id, pull_socket, timeout=1000, agents=INF):
@@ -94,9 +92,10 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
     config = dict(timeout=1000, agents=INF)
 
     def __init__(self, request, client_address, server):
+        super(RequestHandler, self).__init__(request, client_address, server)
+
         self.pull_socket = server.pull_socket
         self.publish_socket = server.publish_socket
-        super(RequestHandler, self).__init__(request, client_address, server)
 
     def send_json_response(self, data, status=200):
         self.send_response(status)
@@ -185,12 +184,8 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         if req is None:
             return
 
-        request = AgentsRequest(
-            req,
-            config,
-            self.publish_socket,
-            self.pull_socket)
-        response = request()
+        request = AgentsRequest(req, config)
+        response = request(self.publish_socket, self.pull_socket)
         self.send_json_response(response)
 
     def _get_request_from_post(self):
