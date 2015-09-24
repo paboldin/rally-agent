@@ -103,7 +103,7 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         self.send_header("Content-Type", "text/json")
         self.end_headers()
 
-        self.wfile.write(bytes(json.dumps(data) + "\n", "utf-8"))
+        self.wfile.write((json.dumps(data) + "\n").encode("utf-8"))
 
     @register("/configure", ('GET', 'PUT'))
     def configure(self):
@@ -238,7 +238,7 @@ def parse_args():
         default="0.0.0.0")
     parser.add_argument(
         "--http-port", help="Port to bind HTTP face to",
-        default=8080)
+        type=int, default=8080)
 
     parser.add_argument(
         "--publish-url", help="ZMQ Publish bind URL",
