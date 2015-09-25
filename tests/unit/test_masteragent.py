@@ -388,6 +388,7 @@ class RequestHandlerTestCase(unittest.TestCase):
             return_value=dict(**url))
         req_handler._get_request_from_post = mock.Mock(
             return_value=dict(**post))
+        req_handler.url = mock.Mock(path=path)
 
         if should_raise:
             self.assertRaises(ValueError, req_handler._parse_request)
@@ -397,7 +398,6 @@ class RequestHandlerTestCase(unittest.TestCase):
         post["action"] = path[1:]
 
         req = req_handler._parse_request()
-
 
         self.assertEqual(post, req)
 
