@@ -21,12 +21,8 @@ except:
 INF = float("+inf")
 
 class AgentsRequest(object):
-    missed_queue = collections.defaultdict(list)
-    last_req_id = None
-
     def __init__(self, req, config, req_id=None):
         self.req_id = req_id or str(uuid.uuid4())
-        AgentsRequest.last_req_id = self.req_id
 
         self.req = req
         self.config = config
@@ -43,15 +39,18 @@ class AgentsRequest(object):
             self.req_id, pull_socket, **self.config)
 
     @classmethod
-    def recv_responses(cls, req_id, pull_socket, timeout=1000, agents=INF):
+    def recv_responses(cls, req_id, pull_socket, missed_queue=None,
+                       timeout=1000, agents=INF):
         tstart = datetime.datetime.now()
         timeout = float(timeout)
         agents = float(agents)
-        queue = cls.missed_queue.pop(req_id, [])
-        while timeout>0 and len(queue) < agents and pull_socket.poll(timeout):
+        if missed_queue is not None:
+            queue = missed_queue.pop(req_id, [])
+        while (timeout > 0 and len(queue) < agents
+               and pull_socket.poll(timeout)):
             resp = pull_socket.recv_json()
-            if resp["req"] != req_id:
-                cls.missed_queue[resp["req"]].append(resp)
+            if resp["req"] != req_id and missed_queue is not None:
+                missed_queue.setdefault(resp["req"], []).append(resp)
             else:
                 queue.append(resp)
             timeout -= (datetime.datetime.now() - tstart).total_seconds()*1000
@@ -96,6 +95,9 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
 
         self.pull_socket = server.pull_socket
         self.publish_socket = server.publish_socket
+        self.missed_queue = {}
+        self.last_req_id = None
+
 
     def send_json_response(self, data, status=200):
         self.send_response(status)
@@ -123,12 +125,13 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
 
     @register("/missed", ('GET', 'DELETE'))
     def missed(self):
-        AgentsRequest.recv_responses(None, self.pull_socket,
-                                     timeout=10000, agents=INF)
+        AgentsRequest.recv_responses(
+            None, self.pull_socket, self.missed_queue,
+            timeout=10000, agents=INF)
 
-        self.send_json_response({"missed": AgentsRequest.missed_queue})
+        self.send_json_response({"missed": self.missed_queue})
         if self.command == "DELETE":
-            AgentsRequest.missed_queue.clear()
+            self.missed_queue.clear()
 
     @register("/ping")
     def ping(self):
@@ -146,8 +149,9 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         )
 
         responses = AgentsRequest.recv_responses(
-            config.pop("req", AgentsRequest.last_req_id),
-            self.pull_socket, **config)
+            config.pop("req", self.last_req_id),
+            self.pull_socket, self.missed_queue,
+            **config)
         self.send_json_response(responses)
 
     def route(self):
@@ -185,6 +189,7 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
             return
 
         request = AgentsRequest(req, config)
+        self.last_req_id = request.req_id
         response = request(self.publish_socket, self.pull_socket)
         self.send_json_response(response)
 
