@@ -92,16 +92,18 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
     DEFAULT_CONFIG = dict(timeout=1000, agents=INF)
 
     def __init__(self, request, client_address, server, path=None):
-        super(RequestHandler, self).__init__(request, client_address, server)
-
         self.pull_socket = server.pull_socket
         self.publish_socket = server.publish_socket
         self.missed_queue = {}
         self.last_req_id = None
         self.config = dict(**self.DEFAULT_CONFIG)
-        if not hasattr(self, "path"):
-            self.path = path
+
+        super(RequestHandler, self).__init__(request, client_address, server)
+
+    def parse_request(self):
+        retval = super(RequestHandler, self).parse_request()
         self.url = six.moves.urllib.parse.urlparse(self.path)
+        return retval
 
     def send_json_response(self, data, status=200):
         self.send_response(status)
