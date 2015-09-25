@@ -42,14 +42,15 @@ class AgentsRequest(object):
         timeout = float(timeout)
         agents = float(agents)
         queue = []
-        if missed_queue is not None:
-            queue = missed_queue.pop(req_id, [])
+        if missed_queue is None:
+            missed_queue = {}
+        queue = missed_queue.pop(req_id, [])
 
         left = timeout
         while (left > 0 and len(queue) < agents
                and pull_socket.poll(left)):
             resp = pull_socket.recv_json()
-            if resp["req"] != req_id and missed_queue is not None:
+            if resp["req"] != req_id:
                 missed_queue.setdefault(resp["req"], []).append(resp)
             else:
                 queue.append(resp)
