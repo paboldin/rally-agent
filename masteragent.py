@@ -89,16 +89,19 @@ def register(path, methods=('GET',)):
 
 @six.add_metaclass(RegisterHandlerMeta)
 class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
-    config = dict(timeout=1000, agents=INF)
+    DEFAULT_CONFIG = dict(timeout=1000, agents=INF)
 
-    def __init__(self, request, client_address, server):
+    def __init__(self, request, client_address, server, path=None):
         super(RequestHandler, self).__init__(request, client_address, server)
 
         self.pull_socket = server.pull_socket
         self.publish_socket = server.publish_socket
         self.missed_queue = {}
         self.last_req_id = None
-
+        self.config = dict(**self.DEFAULT_CONFIG)
+        if not hasattr(self, "path"):
+            self.path = path
+        self.url = six.moves.urllib.parse.urlparse(self.path)
 
     def send_json_response(self, data, status=200):
         self.send_response(status)
@@ -120,10 +123,6 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
 
         self.send_json_response(self.config)
 
-    def _get_config_from_url(self, **config):
-        config.update(self._get_request_from_url()[1])
-        return config
-
     @register("/missed", ('GET', 'DELETE'))
     def missed(self):
         AgentsRequest.recv_responses(
@@ -136,7 +135,7 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
 
     @register("/ping")
     def ping(self):
-        config = self._get_config_from_url(
+        config = self._get_request_from_url(
             timeout=10000,
             agents=INF
         )
@@ -144,7 +143,7 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
 
     @register("/poll")
     def poll(self):
-        config = self._get_config_from_url(
+        config = self._get_request_from_url(
             timeout=10000,
             agents=INF
         )
@@ -156,7 +155,6 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         self.send_json_response(responses)
 
     def route(self):
-        self.url = six.moves.urllib.parse.urlparse(self.path)
         path = self.url.path
         try:
             handler = self.methods[self.command][path]
@@ -168,25 +166,26 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
     do_PUT = do_GET = do_DELETE = route
 
     def do_POST(self):
-        self.url = six.moves.urllib.parse.urlparse(self.path)
         self.send_request_to_agents(self.config)
 
     def _parse_request(self):
         req = self._get_request_from_post()
-        path, url_req = self._get_request_from_url()
-        req["action"] = path[1:]
+        url_req = self._get_request_from_url()
+        req["action"] = self.url.path[1:]
         if set(req) & set(url_req):
-            self.send_json_response(
-                {"error": "Duplicate argumets"},
-                status=400
-            )
-            return
+            raise ValueError("Duplicate argumets.")
+        req.update(url_req)
+
         return req
 
     def send_request_to_agents(self, config):
-
-        req = self._parse_request()
-        if req is None:
+        try:
+            req = self._parse_request()
+        except ValueError as e:
+            self.send_json_response(
+                {"error": str(e)},
+                status=400
+            )
             return
 
         request = AgentsRequest(req, config)
@@ -208,9 +207,9 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         )
         return make_flat(form)
 
-    def _get_request_from_url(self):
-        return (self.url.path,
-                dict(six.moves.urllib.parse.parse_qsl(self.url.query)))
+    def _get_request_from_url(self, **config):
+        config.update(dict(six.moves.urllib.parse.parse_qsl(self.url.query)))
+        return config
 
 
 class MasterAgentHTTPServer(six.moves.BaseHTTPServer.HTTPServer):
