@@ -115,8 +115,11 @@ class Agent(object):
     def recv_request(self):
         request = self.subscribe_socket.recv_json()
         target = request.get("target")
-        if target and target != self.agent_id and self.agent_id not in target:
-            return
+        if target:
+            if not isinstance(target, list):
+                target = target.split(",")
+            if self.agent_id not in target:
+                return
 
         return request
 
