@@ -12,10 +12,7 @@ import time
 import uuid
 import zmq
 
-try:
-    import Queue as queue
-except:
-    import queue
+datetime_now = datetime.datetime.now
 
 
 INF = float("+inf")
@@ -41,19 +38,23 @@ class AgentsRequest(object):
     @classmethod
     def recv_responses(cls, req_id, pull_socket, missed_queue=None,
                        timeout=1000, agents=INF):
-        tstart = datetime.datetime.now()
+        tstart = datetime_now()
         timeout = float(timeout)
         agents = float(agents)
+        queue = []
         if missed_queue is not None:
             queue = missed_queue.pop(req_id, [])
-        while (timeout > 0 and len(queue) < agents
-               and pull_socket.poll(timeout)):
+
+        left = timeout
+        while (left > 0 and len(queue) < agents
+               and pull_socket.poll(left)):
             resp = pull_socket.recv_json()
             if resp["req"] != req_id and missed_queue is not None:
                 missed_queue.setdefault(resp["req"], []).append(resp)
             else:
                 queue.append(resp)
-            timeout -= (datetime.datetime.now() - tstart).total_seconds()*1000
+            left = timeout - (datetime_now() - tstart).total_seconds()*1000
+
         return queue
 
 
