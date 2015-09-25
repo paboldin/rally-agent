@@ -177,7 +177,7 @@ class Agent(object):
         return executor.run()
 
 
-def parse_args():
+def parse_args(args=None):
     parser = argparse.ArgumentParser(description="Run a ZMQ agent")
 
     parser.add_argument(
@@ -189,10 +189,10 @@ def parse_args():
     parser.add_argument(
         "--agent-id", help="ZMQ agent ID")
 
-    return parser.parse_args()
+    return parser.parse_args(args)
 
-def main():
-    args = parse_args()
+def main(args=None):
+    args = parse_args(args)
     agent = Agent(args.subscribe_url, args.push_url, args.agent_id)
     while True:
         agent.loop()

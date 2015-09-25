@@ -234,7 +234,7 @@ def init_zmq(publish_url, pull_url):
 
     return publish_socket, pull_socket
 
-def parse_args():
+def parse_args(args=None):
     parser = argparse.ArgumentParser(
         description="Run a HTTP<->ZMQ proxy called 'masteragent'")
     parser.add_argument(
@@ -251,10 +251,10 @@ def parse_args():
         "--pull-url", help="ZMQ Pull bind URL",
         default="tcp://*:1235")
 
-    return parser.parse_args()
+    return parser.parse_args(args)
 
-def main():
-    args = parse_args()
+def main(args=None):
+    args = parse_args(args)
     publish_socket, pull_socket = init_zmq(
         args.publish_url, args.pull_url)
 
