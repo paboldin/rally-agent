@@ -6,9 +6,6 @@ import itertools
 import mock
 import datetime
 import unittest
-import zmq
-
-orig_datetime = datetime
 
 import masteragent
 
@@ -355,6 +352,7 @@ class RequestHandlerTestCase(unittest.TestCase):
         req_handler.url = mock.Mock(path=path)
         req_handler.command = command
         req_handler.send_response = mock.Mock()
+        req_handler.end_headers = mock.Mock()
         req_handler.methods = {
             "GET": {"/here": lambda x: "foobar"},
             "POST": {"/there": lambda x: "foobar"},
@@ -452,3 +450,58 @@ class RequestHandlerTestCase(unittest.TestCase):
         self.assertEqual(
             mock_masteragent_make_flat.return_value,
             retval)
+
+def make_flat(form):
+    d = {}
+    for k in form.keys():
+        if isinstance(form[k], list):
+            d[k] = [x.value for x in form[k]]
+        else:
+            d[k] = form[k].value
+    return d
+
+
+class Value(object):
+    def __init__(self, value):
+        self.value = value
+
+
+class ModuleTestCase(unittest.TestCase):
+    def test_make_flat(self):
+        form = {
+            "a": map(Value, ["a", "b", "c"]),
+            "b": Value("10")
+        }
+        expected = {
+            "a": ["a", "b", "c"],
+            "b": "10"
+        }
+
+        retval = masteragent.make_flat(form)
+        self.assertEqual(expected, retval)
+
+    @mock.patch("zmq.Context")
+    def test_init_zmq(self, mock_zmq_context):
+        masteragent.init_zmq("publish_url", "pull_url")
+
+        import zmq
+
+        self.assertEqual(
+            [
+                # PUB socket
+                # zmq.Context()
+                mock.call(),
+                # context.socket(zmq.PUB)
+                mock.call().socket(zmq.PUB),
+                # socket.bind
+                mock.call().socket().bind("publish_url"),
+
+                # PULL socket
+                # zmq.Context()
+                mock.call(),
+                # context.socket(zmq.PULL)
+                mock.call().socket(zmq.PULL),
+                # socket.bind
+                mock.call().socket().bind("pull_url"),
+            ],
+            mock_zmq_context.mock_calls)
