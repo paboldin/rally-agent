@@ -225,7 +225,8 @@ class RequestHandlerTestCase(unittest.TestCase):
             mock_.stop()
 
     def get_req_handler(self, path="/"):
-        server = mock.Mock(pull_socket="foo", publish_socket="bar")
+        server = mock.Mock(pull_socket="foo", publish_socket="bar",
+                           server_vars=masteragent.ServerVariables())
         return masteragent.RequestHandler(
             request=None, client_address=None,
             server=server, path=path)
@@ -249,23 +250,6 @@ class RequestHandlerTestCase(unittest.TestCase):
             b"""{"hello": "there"}\n"""
         )
 
-    @ddt.unpack
-    @ddt.data(
-        ("timeout=10&agents=1", {"timeout": 10., "agents": 1.}),
-        ("timeout=10", {"timeout": 10., "agents": float("+Inf")}),
-        ("agents=10", {"timeout": 1000., "agents": 10.}),
-        ("", {"timeout": 1000., "agents": float("+Inf")})
-    )
-    def test_configure(self, query, config):
-        req_handler = self.get_req_handler()
-        req_handler.send_json_response = mock.Mock()
-
-        req_handler.url = mock.Mock(query=query)
-
-        req_handler.configure()
-
-        req_handler.send_json_response.assert_called_once_with(config)
-
     def test__get_request_from_url(self):
         req_handler = self.get_req_handler()
         req_handler.url = mock.Mock(query="a=b&c=d&e=f")
@@ -280,17 +264,18 @@ class RequestHandlerTestCase(unittest.TestCase):
     def test_missed(self, mock_agents_request_recv_responses):
         req_handler = self.get_req_handler()
         req_handler.send_json_response = mock.Mock()
+        req_handler._get_request_from_url = mock.Mock(
+            return_value={"foo": "bar"})
         req_handler.command = "DELETE"
-        req_handler.missed_queue = mock.Mock()
+        req_handler.server_vars.missed_queue = mock.Mock()
 
         req_handler.missed()
 
         mock_agents_request_recv_responses.assert_called_once_with(
-            None, "foo", req_handler.missed_queue, agents=float("Inf"),
-            timeout=10000)
+            None, "foo", req_handler.server_vars.missed_queue, foo="bar")
         req_handler.send_json_response.assert_called_once_with(
-            {"missed": req_handler.missed_queue})
-        req_handler.missed_queue.clear.assert_called_once_with()
+            {"missed": req_handler.server_vars.missed_queue})
+        req_handler.server_vars.missed_queue.clear.assert_called_once_with()
 
     def test_ping(self):
         req_handler = self.get_req_handler()
@@ -315,14 +300,14 @@ class RequestHandlerTestCase(unittest.TestCase):
         req_handler.send_json_response = mock.Mock()
         req_handler._get_request_from_url = mock.Mock(
             return_value=dict(**config))
-        req_handler.last_req_id = "last_req_id"
-        req_handler.missed_queue = "missed_queue"
+        req_handler.server_vars.last_req_id = "last_req_id"
 
         req_handler.poll()
 
         mock_agents_request_recv_responses.assert_called_once_with(
             config.get("req", "last_req_id"),
-            req_handler.pull_socket, req_handler.missed_queue, foo="bar"
+            req_handler.pull_socket, req_handler.server_vars.missed_queue,
+            foo="bar"
         )
         req_handler.send_json_response.assert_called_once_with(
             mock_agents_request_recv_responses.return_value)
@@ -368,11 +353,12 @@ class RequestHandlerTestCase(unittest.TestCase):
     def test_do_POST(self):
         req_handler = self.get_req_handler()
         req_handler.send_request_to_agents = mock.Mock()
+        req_handler._get_request_from_url = mock.Mock()
 
         req_handler.do_POST()
 
         req_handler.send_request_to_agents.assert_called_once_with(
-            req_handler.config
+            req_handler._get_request_from_url.return_value
         )
 
     @ddt.unpack
@@ -411,7 +397,7 @@ class RequestHandlerTestCase(unittest.TestCase):
             req_handler._parse_request.return_value, {"foo": "bar"})
         self.assertEqual(
             mock_masteragent_agents_request.return_value.req_id,
-            req_handler.last_req_id)
+            req_handler.server_vars.last_req_id)
         mock_masteragent_agents_request.return_value.assert_called_once_with(
             "bar", "foo")
         req_handler.send_json_response.assert_called_once_with(

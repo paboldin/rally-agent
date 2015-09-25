@@ -87,16 +87,16 @@ def register(path, methods=('GET',)):
         return f
     return decorator
 
+
 @six.add_metaclass(RegisterHandlerMeta)
 class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
-    DEFAULT_CONFIG = dict(timeout=1000, agents=INF)
+    POST_CONFIG = dict(timeout=1000, agents=INF)
+    POLL_CONFIG = dict(timeout=10000, agents=INF)
 
     def __init__(self, request, client_address, server, path=None):
         self.pull_socket = server.pull_socket
         self.publish_socket = server.publish_socket
-        self.missed_queue = {}
-        self.last_req_id = None
-        self.config = dict(**self.DEFAULT_CONFIG)
+        self.server_vars = server.server_vars
 
         super(RequestHandler, self).__init__(request, client_address, server)
 
@@ -112,47 +112,29 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
 
         self.wfile.write((json.dumps(data) + "\n").encode("utf-8"))
 
-    @register("/configure", ('GET', 'PUT'))
-    def configure(self):
-        if self.url.query:
-            config = dict(six.moves.urllib.parse.parse_qsl(self.url.query))
-            self.config["timeout"] = float(
-                config.get("timeout", self.config["timeout"])
-            )
-            self.config["agents"] = float(
-                config.get("agents", self.config["agents"])
-            )
-
-        self.send_json_response(self.config)
-
     @register("/missed", ('GET', 'DELETE'))
     def missed(self):
+        config = self._get_request_from_url(**self.POLL_CONFIG)
         AgentsRequest.recv_responses(
-            None, self.pull_socket, self.missed_queue,
-            timeout=10000, agents=INF)
+            None, self.pull_socket, self.server_vars.missed_queue,
+            **config)
 
-        self.send_json_response({"missed": self.missed_queue})
+        self.send_json_response({"missed": self.server_vars.missed_queue})
         if self.command == "DELETE":
-            self.missed_queue.clear()
+            self.server_vars.missed_queue.clear()
 
     @register("/ping")
     def ping(self):
-        config = self._get_request_from_url(
-            timeout=10000,
-            agents=INF
-        )
+        config = self._get_request_from_url(**self.POLL_CONFIG)
         return self.send_request_to_agents(config)
 
     @register("/poll")
     def poll(self):
-        config = self._get_request_from_url(
-            timeout=10000,
-            agents=INF
-        )
+        config = self._get_request_from_url(**self.POLL_CONFIG)
 
         responses = AgentsRequest.recv_responses(
-            config.pop("req", self.last_req_id),
-            self.pull_socket, self.missed_queue,
+            config.pop("req", self.server_vars.last_req_id),
+            self.pull_socket, self.server_vars.missed_queue,
             **config)
         self.send_json_response(responses)
 
@@ -170,7 +152,8 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
     do_PUT = do_GET = do_DELETE = route
 
     def do_POST(self):
-        self.send_request_to_agents(self.config)
+        config = self._get_request_from_url(**self.POST_CONFIG)
+        self.send_request_to_agents(config)
 
     def _parse_request(self):
         req = self._get_request_from_post()
@@ -193,7 +176,7 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
             return
 
         request = AgentsRequest(req, config)
-        self.last_req_id = request.req_id
+        self.server_vars.last_req_id = request.req_id
         response = request(self.publish_socket, self.pull_socket)
         self.send_json_response(response)
 
@@ -215,12 +198,17 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         config.update(dict(six.moves.urllib.parse.parse_qsl(self.url.query)))
         return config
 
+class ServerVariables(object):
+    def __init__(self):
+        self.missed_queue = {}
+        self.last_req_id = None
 
 class MasterAgentHTTPServer(six.moves.BaseHTTPServer.HTTPServer):
     def __init__(self, address, request, publish_socket, pull_socket):
         six.moves.BaseHTTPServer.HTTPServer.__init__(self, address, request)
         self.publish_socket = publish_socket
         self.pull_socket = pull_socket
+        self.server_vars = ServerVariables()
 
 
 def init_zmq(publish_url, pull_url):
