@@ -161,7 +161,9 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
         try:
             handler = self.methods[self.command][path]
         except KeyError:
-            return self.send_response(404)
+            self.send_response(404)
+            self.end_headers()
+            return
 
         return handler(self)
 
