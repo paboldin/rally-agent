@@ -1,3 +1,4 @@
+ddt
 mock
 nose2
-ddt
+requests
