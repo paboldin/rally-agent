@@ -409,16 +409,24 @@ class RequestHandlerTestCase(unittest.TestCase):
 
         self.assertEqual({}, req_handler._get_request_from_post())
 
-    @mock.patch("masteragent.make_flat")
     @mock.patch("cgi.FieldStorage")
-    def test__get_request_from_post(self, mock_cgi_field_storage,
-                                    mock_masteragent_make_flat):
+    def test__get_request_from_post(self, mock_cgi_field_storage):
         req_handler = self.get_req_handler()
         req_handler.headers = {
             "Content-Type": "form/multi-part",
             "Content-Length": 42
         }
         req_handler.rfile = mock.Mock()
+
+        class V(object):
+            def __init__(self, value):
+                self.value = value
+
+        mock_cgi_field_storage.return_value = {
+            "foo": [V("10"), V("test")],
+            "bar": V("{\"abc\": [10, 20, 30], \"foo\": 10}"),
+            "env": V("[\"D=E\", \"A=B=C\"]"),
+        }
 
         retval = req_handler._get_request_from_post()
 
@@ -431,41 +439,16 @@ class RequestHandlerTestCase(unittest.TestCase):
             }
         )
 
-        mock_masteragent_make_flat.assert_called_once_with(
-            mock_cgi_field_storage.return_value)
         self.assertEqual(
-            mock_masteragent_make_flat.return_value,
+            {
+                'bar': {u'abc': [10, 20, 30], u'foo': 10},
+                'env': {u'A': u'B=C', u'D': u'E'},
+                'foo': ['10', 'test']
+            },
             retval)
-
-def make_flat(form):
-    d = {}
-    for k in form.keys():
-        if isinstance(form[k], list):
-            d[k] = [x.value for x in form[k]]
-        else:
-            d[k] = form[k].value
-    return d
-
-
-class Value(object):
-    def __init__(self, value):
-        self.value = value
 
 
 class ModuleTestCase(unittest.TestCase):
-    def test_make_flat(self):
-        form = {
-            "a": map(Value, ["a", "b", "c"]),
-            "b": Value("10")
-        }
-        expected = {
-            "a": ["a", "b", "c"],
-            "b": "10"
-        }
-
-        retval = masteragent.make_flat(form)
-        self.assertEqual(expected, retval)
-
     @mock.patch("zmq.Context")
     def test_init_zmq(self, mock_zmq_context):
         masteragent.init_zmq("publish_url", "pull_url")

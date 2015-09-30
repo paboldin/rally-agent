@@ -102,7 +102,7 @@ class CommandExecutorTestCase(unittest.TestCase):
             resp)
 
         mock_subprocess_popen.assert_called_once_with(
-            req["path"], stdout="stdout_fh", stderr="stderr_fh")
+            req["path"], stdout="stdout_fh", stderr="stderr_fh", env=None)
         self.assertEqual(
             [
                 mock.call.communicate(),
@@ -136,7 +136,7 @@ class CommandExecutorTestCase(unittest.TestCase):
             resp)
 
         mock_subprocess_popen.assert_called_once_with(
-            req["path"], stdout=mock_stdout, stderr=mock_stderr)
+            req["path"], stdout=mock_stdout, stderr=mock_stderr, env=None)
 
         mock_threading_thread.assert_called_once_with(
             target=executor._thread_target,

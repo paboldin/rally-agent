@@ -59,15 +59,6 @@ class AgentsRequest(object):
         return queue
 
 
-def make_flat(form):
-    d = {}
-    for k in form.keys():
-        if isinstance(form[k], list):
-            d[k] = [x.value for x in form[k]]
-        else:
-            d[k] = form[k].value
-    return d
-
 class RegisterHandlerMeta(type):
     def __new__(cls, clsname, base, namespace):
         methods = namespace["methods"] = collections.defaultdict(dict)
@@ -193,7 +184,22 @@ class RequestHandler(six.moves.BaseHTTPServer.BaseHTTPRequestHandler, object):
                 "CONTENT_TYPE": self.headers["Content-Type"],
             }
         )
-        return make_flat(form)
+
+        d = {}
+        for k in form.keys():
+            if isinstance(form[k], list):
+                d[k] = [x.value for x in form[k]]
+            else:
+                try:
+                    d[k] = json.loads(form[k].value)
+                except ValueError as e:
+                    d[k] = form[k].value
+
+        env = d.get("env")
+        if isinstance(env, list):
+            d["env"] = dict(var.split("=", 1) for var in env)
+
+        return d
 
     def _get_request_from_url(self, **config):
         config.update(dict(six.moves.urllib.parse.parse_qsl(self.url.query)))

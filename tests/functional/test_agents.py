@@ -152,6 +152,37 @@ class SwarmTestCase(unittest.TestCase):
             self.assertEqual(0, poll["exit_code"])
             self.assertEqual(bash_version, poll["stdout"])
 
+    def _tail_and_wait(self, agents=2):
+        file_contents = ["" for i in range(agents)]
+
+        while True:
+            tails = requests.post(
+                "%s/tail?agents=%d" % (self.http_url, agents),
+                data={
+                    "size": 16
+                }
+            ).json()
+
+            updated = False
+            for i in range(agents):
+                if tails[i]["stdout"]:
+                    updated = True
+                    file_contents[i] += tails[i]["stdout"]
+
+            if not updated:
+                checks = requests.post(
+                    "%s/check?agents=%d" % (self.http_url, agents)
+                ).json()
+
+                finished = 0
+                for check in checks:
+                    if check["exit_code"] is not None:
+                        finished += 1
+                if finished == agents:
+                    break
+
+        return file_contents
+
     def test_commandthread_tail_check(self):
         tails = requests.post("%s/tail?agents=2" % self.http_url).json()
         self.assertEqual(2, len(tails))
@@ -161,52 +192,22 @@ class SwarmTestCase(unittest.TestCase):
         commands = requests.post("%s/command?agents=2" % self.http_url,
             data={
                 "path": ["bash", "--version"],
-                "thread": "yes"
+                "thread": "true"
             }
         ).json()
         self.assertEqual(2, len(commands))
 
-        def tail_and_wait(agents=2):
-            file_contents = ["" for i in range(agents)]
-
-            while True:
-                tails = requests.post(
-                    "%s/tail?agents=%d" % (self.http_url, agents),
-                    data={
-                        "size": 16
-                    }
-                ).json()
-
-                updated = False
-                for i in range(agents):
-                    if tails[i]["stdout"]:
-                        updated = True
-                        file_contents[i] += tails[i]["stdout"]
-
-                if not updated:
-                    checks = requests.post(
-                        "%s/check?agents=%d" % (self.http_url, agents)
-                    ).json()
-
-                    finished = 0
-                    for check in checks:
-                        if check["exit_code"] is not None:
-                            finished += 1
-                    if finished == agents:
-                        break
-
-            return file_contents
 
         bash_version = subprocess.check_output(["bash", "--version"])
 
-        file_contents = tail_and_wait()
+        file_contents = self._tail_and_wait(2)
         for file_content in file_contents:
             self.assertEqual(bash_version, file_content)
 
         commands = requests.post("%s/command?agents=2" % self.http_url,
             data={
                 "path": ["bash", "--version"],
-                "thread": "yes"
+                "thread": "true"
             }
         ).json()
         for command in commands:
@@ -216,6 +217,21 @@ class SwarmTestCase(unittest.TestCase):
         checks = requests.post(
             "%s/check?agents=2" % self.http_url,
             {
-                "clear": "yes"
+                "clear": "true"
             }
         ).json()
+
+    def test_commandenv(self):
+        environ = ["C=D", "E=F=G", "A=B"]
+        commands = requests.post(
+            "%s/command?agents=2" % self.http_url,
+            data={
+                "path": ["env"],
+                "env": environ
+            }
+        ).json()
+        env_output = subprocess.check_output(
+            ["env"],
+            env=dict(var.split("=", 1) for var in environ))
+        for command in commands:
+            self.assertEqual(env_output, command["stdout"])

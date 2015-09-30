@@ -50,7 +50,8 @@ class CommandExecutor(object):
         stdout_fh, stderr_fh = self._get_stdout_stderr()
 
         process = subprocess.Popen(
-            req["path"], stdout=stdout_fh, stderr=stderr_fh
+            req["path"], stdout=stdout_fh, stderr=stderr_fh,
+            env=req.get("env")
         )
         stdout = stderr = None
 
