@@ -11,10 +11,11 @@ import uuid
 import zmq
 
 class CommandExecutor(object):
-    def __init__(self, req, resp):
+    def __init__(self, req, resp, agent_id=None):
         self.req = req
         self.resp = resp
         self.thread = req.get("thread")
+        self.agent_id = agent_id
         self.stdout_fh = self.stderr_fh = None
         self.child_stdout_fh = self.child_stderr_fh = None
 
@@ -49,9 +50,13 @@ class CommandExecutor(object):
 
         stdout_fh, stderr_fh = self._get_stdout_stderr()
 
+        env = req.get("env")
+        if env and "AGENT_ID" in env and self.agent_id is not None:
+            env["AGENT_ID"] = self.agent_id
+
         process = subprocess.Popen(
             req["path"], stdout=stdout_fh, stderr=stderr_fh,
-            env=req.get("env")
+            env=env
         )
         stdout = stderr = None
 
@@ -175,7 +180,7 @@ class Agent(object):
         if self.executor and self.executor.thread:
             raise ValueError("A command is already being executed.")
 
-        executor = CommandExecutor(req, resp)
+        executor = CommandExecutor(req, resp, self.agent_id)
         if executor.thread:
             self.executor = executor
         return executor.run()

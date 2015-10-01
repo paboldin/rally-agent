@@ -235,3 +235,19 @@ class SwarmTestCase(unittest.TestCase):
             env=dict(var.split("=", 1) for var in environ))
         for command in commands:
             self.assertEqual(env_output, command["stdout"])
+
+    def test_commandenv_agent(self):
+        environ = ["C=D", "E=F=G", "A=B", "AGENT_ID=NAN"]
+        commands = requests.post(
+            "%s/command?agents=2" % self.http_url,
+            data={
+                "path": ["env"],
+                "env": environ
+            }
+        ).json()
+        env_output = subprocess.check_output(
+            ["env"],
+            env=dict(var.split("=", 1) for var in environ[:-1]))
+        for command in commands:
+            agent_env_output = env_output + "AGENT_ID=%s\n" % command["agent"]
+            self.assertEqual(agent_env_output, command["stdout"])

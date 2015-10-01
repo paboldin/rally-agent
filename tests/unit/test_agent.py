@@ -102,7 +102,8 @@ class CommandExecutorTestCase(unittest.TestCase):
             resp)
 
         mock_subprocess_popen.assert_called_once_with(
-            req["path"], stdout="stdout_fh", stderr="stderr_fh", env=None)
+            req["path"], stdout="stdout_fh", stderr="stderr_fh",
+            env=None)
         self.assertEqual(
             [
                 mock.call.communicate(),
@@ -448,7 +449,8 @@ class AgentTestCase(unittest.TestCase):
         resp = {}
         agent_instance.do_command(req, resp)
 
-        mock_agent_command_executor.assert_called_once_with(req, resp)
+        mock_agent_command_executor.assert_called_once_with(
+            req, resp, agent_instance.agent_id)
         self.assertEqual(mock_agent_command_executor.return_value,
                          agent_instance.executor)
         mock_agent_command_executor.return_value.run.assert_called_once_with()
